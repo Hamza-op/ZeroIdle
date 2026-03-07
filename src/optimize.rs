@@ -15,6 +15,7 @@ pub fn optimize_for_gaming() {
     clear_standby_memory();
     disable_mouse_acceleration();
     disable_nagles_algorithm();
+    disable_xbox_game_bar();
 
     debug_print("  [✓] Gaming optimizations applied.");
 }
@@ -26,6 +27,8 @@ pub fn optimize_system_and_privacy() {
     disable_telemetry();
     disable_hibernation();
     clear_event_logs();
+    disable_start_menu_web_search();
+    disable_consumer_features();
 
     debug_print("  [✓] System and Privacy optimizations applied.");
 }
@@ -195,5 +198,44 @@ fn clear_event_logs() {
         .for_each(|log| {
             let _ = crate::hidden_command("wevtutil").args(&["cl", log]).output();
         });
-    debug_print("    ✓ Windows Event Logs cleared.");
+}
+
+fn disable_start_menu_web_search() {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((key, _)) = hkcu.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\Explorer") {
+        let _ = key.set_value("DisableSearchBoxSuggestions", &1u32);
+    }
+    
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\Windows Search") {
+        let _ = key.set_value("DisableWebSearch", &1u32);
+        let _ = key.set_value("ConnectedSearchUseWeb", &0u32);
+    }
+    debug_print("    ✓ Web Search in Start Menu disabled (Faster Search).");
+}
+
+fn disable_consumer_features() {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\CloudContent") {
+        let _ = key.set_value("DisableWindowsConsumerFeatures", &1u32);
+    }
+    debug_print("    ✓ Windows Consumer Features disabled (No auto-installing Candy Crush).");
+}
+
+fn disable_xbox_game_bar() {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\GameDVR") {
+        let _ = key.set_value("AppCaptureEnabled", &0u32);
+    }
+    
+    // Disable the service entirely using PowerShell
+    let ps_script = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+Get-AppxPackage -AllUsers *XboxGamingOverlay* | Remove-AppxPackage -AllUsers
+"#;
+    let _ = crate::hidden_command("powershell")
+        .args(&["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .output();
+        
+    debug_print("    ✓ Xbox Game Bar uninstalled & disabled.");
 }
