@@ -1,0 +1,26 @@
+/target
+
+# Except for the final executable
+!/target/release/idm-system-tool.exe
+
+# Ignore Cargo.lock if this is a library, but since it's an application we keep it.
+# Cargo.lock
+
+# Ignore rust-analyzer files
+.rustup/
+.cargo/
+
+# Ignore JetBrains IDE files
+.idea/
+
+# Ignore Visual Studio files
+.vs/
+*.suo
+*.user
+
+# Ignore VSCode files
+.vscode/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db

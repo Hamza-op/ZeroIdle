@@ -74,11 +74,11 @@ impl TaskState {
             is_done: false,
             active_phase: 0,
             phases: vec![
-                Phase { icon: "🔑", name: "IDM Activation Reset", status: PhaseStatus::Pending },
-                Phase { icon: "🧹", name: "Temporary File Cleanup", status: PhaseStatus::Pending },
-                Phase { icon: "🎮", name: "Gaming Optimizations", status: PhaseStatus::Pending },
-                Phase { icon: "🎨", name: "Adobe Optimization", status: PhaseStatus::Pending },
-                Phase { icon: "🛡", name: "System & Privacy", status: PhaseStatus::Pending },
+                Phase { icon: "»", name: "IDM Activation Reset", status: PhaseStatus::Pending },
+                Phase { icon: "»", name: "Temporary File Cleanup", status: PhaseStatus::Pending },
+                Phase { icon: "»", name: "Gaming Optimizations", status: PhaseStatus::Pending },
+                Phase { icon: "»", name: "Adobe Optimization", status: PhaseStatus::Pending },
+                Phase { icon: "»", name: "System & Privacy", status: PhaseStatus::Pending },
             ],
         }
     }
@@ -149,13 +149,10 @@ impl eframe::App for MaintenanceApp {
         egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
             let full_rect = ui.available_rect_before_wrap();
 
-            // ── Animated background orbs ──
-            draw_bg_orbs(ui.painter(), full_rect, t);
-
-            // Content with padding
-            ui.allocate_ui_at_rect(full_rect.shrink2(egui::vec2(28.0, 20.0)), |ui| {
+            // Frame content
+            ui.allocate_ui_at_rect(full_rect.shrink2(egui::vec2(20.0, 16.0)), |ui| {
                 ui.style_mut().visuals.override_text_color = Some(TEXT_PRIMARY);
-                ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
 
                 // ── Title ──
                 ui.vertical_centered(|ui| {
@@ -164,17 +161,17 @@ impl eframe::App for MaintenanceApp {
                     let title_c = lerp_color(ACCENT_CYAN, ACCENT_PURPLE, wave);
                     ui.label(
                         egui::RichText::new("SYSTEM OPTIMIZER")
-                            .size(22.0)
+                            .size(18.0)
                             .strong()
                             .color(title_c),
                     );
                 });
 
-                ui.add_space(12.0);
+                ui.add_space(8.0);
 
                 // ── Circular Progress Ring ──
                 ui.vertical_centered(|ui| {
-                    let ring_size = 100.0;
+                    let ring_size = 80.0;
                     let (rect, _) = ui.allocate_exact_size(
                         egui::vec2(ring_size, ring_size),
                         egui::Sense::hover(),
@@ -227,27 +224,27 @@ impl eframe::App for MaintenanceApp {
                         center,
                         egui::Align2::CENTER_CENTER,
                         format!("{}%", pct),
-                        egui::FontId::proportional(24.0),
+                        egui::FontId::proportional(20.0),
                         pct_color,
                     );
                 });
 
-                ui.add_space(8.0);
+                ui.add_space(6.0);
 
                 // ── Info badges ──
                 let username = std::env::var("USERNAME").unwrap_or_else(|_| "User".to_string());
                 ui.vertical_centered(|ui| {
                     ui.horizontal(|ui| {
                         let center_offset =
-                            (ui.available_width() - 260.0_f32.min(ui.available_width())) / 2.0;
+                            (ui.available_width() - 200.0_f32.min(ui.available_width())) / 2.0;
                         ui.add_space(center_offset.max(0.0));
-                        mini_badge(ui, &format!("👤 {}", username), TEXT_DIM);
-                        mini_badge(ui, &format!("⏱ {}s", elapsed), ACCENT_AMBER);
-                        mini_badge(ui, "🛡 Admin", ACCENT_GREEN);
+                        mini_badge(ui, &format!("USR: {}", username), TEXT_DIM);
+                        mini_badge(ui, &format!("{}s", elapsed), ACCENT_AMBER);
+                        mini_badge(ui, "SYS: Admin", ACCENT_GREEN);
                     });
                 });
 
-                ui.add_space(14.0);
+                ui.add_space(10.0);
 
                 // ── Phase Cards with left accent bar ──
                 phases.iter().enumerate().for_each(|(i, phase)| {
@@ -261,22 +258,22 @@ impl eframe::App for MaintenanceApp {
 
                     let card = egui::Frame::none()
                         .fill(card_bg)
-                        .rounding(egui::Rounding::same(8.0))
+                        .rounding(egui::Rounding::same(6.0))
                         .inner_margin(egui::Margin {
-                            left: 14.0,
-                            right: 14.0,
-                            top: 8.0,
-                            bottom: 8.0,
+                            left: 10.0,
+                            right: 10.0,
+                            top: 6.0,
+                            bottom: 6.0,
                         })
                         .stroke(egui::Stroke::new(1.0, BORDER_DIM));
 
                     let response = card.show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(phase.icon).size(16.0));
+                            ui.label(egui::RichText::new(phase.icon).size(13.0));
                             ui.add_space(6.0);
 
                             let mut name_rt =
-                                egui::RichText::new(phase.name).size(13.5).color(text_col);
+                                egui::RichText::new(phase.name).size(12.0).color(text_col);
                             if is_active {
                                 name_rt = name_rt.strong();
                             }
@@ -288,7 +285,7 @@ impl eframe::App for MaintenanceApp {
                                 |ui| match phase.status {
                                     PhaseStatus::Done => {
                                         ui.label(
-                                            egui::RichText::new("✓").size(14.0).color(ACCENT_GREEN),
+                                            egui::RichText::new("OK").size(11.0).strong().color(ACCENT_GREEN),
                                         );
                                     }
                                     PhaseStatus::Running => {
@@ -299,13 +296,13 @@ impl eframe::App for MaintenanceApp {
                                             _ => "○●○",
                                         };
                                         ui.label(
-                                            egui::RichText::new(dots).size(10.0).color(ACCENT_CYAN),
+                                            egui::RichText::new(dots).size(9.0).color(ACCENT_CYAN),
                                         );
                                     }
                                     PhaseStatus::Pending => {
                                         ui.label(
                                             egui::RichText::new(format!("{}/{}", i + 1, phases.len()))
-                                                .size(10.0)
+                                                .size(9.0)
                                                 .color(egui::Color32::from_rgb(50, 50, 75)),
                                         );
                                     }
@@ -334,8 +331,8 @@ impl eframe::App for MaintenanceApp {
                 ui.add_space(8.0);
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        egui::RichText::new("Built with 🦀 Rust  ·  github.com/hamza-op")
-                            .size(10.5)
+                        egui::RichText::new("Built with Rust  ·  github.com/hamza-op")
+                            .size(9.0)
                             .color(egui::Color32::from_rgb(55, 55, 80)),
                     );
                 });
@@ -350,23 +347,7 @@ impl eframe::App for MaintenanceApp {
 // Drawing Helpers
 // ─────────────────────────────────────────────────────────────
 
-/// Draw soft floating background orbs
-fn draw_bg_orbs(painter: &egui::Painter, rect: egui::Rect, t: f32) {
-    let orbs: [(f32, f32, f32, egui::Color32); 3] = [
-        (0.15, 0.3, 120.0, egui::Color32::from_rgba_premultiplied(99, 102, 241, 12)),
-        (0.8, 0.7, 90.0, egui::Color32::from_rgba_premultiplied(168, 85, 247, 10)),
-        (0.5, 0.85, 100.0, egui::Color32::from_rgba_premultiplied(56, 189, 248, 8)),
-    ];
-
-    orbs.iter().enumerate().for_each(|(i, (bx, by, r, col))| {
-        let drift = (t * 0.3 + i as f32 * 2.0).sin() * 15.0;
-        let center = egui::pos2(
-            rect.min.x + rect.width() * bx + drift,
-            rect.min.y + rect.height() * by + drift * 0.7,
-        );
-        painter.circle_filled(center, *r, *col);
-    });
-}
+// removed to improve performance and styling
 
 /// Draw a circular arc using line segments
 fn draw_arc(
@@ -393,8 +374,8 @@ fn draw_arc(
 }
 
 fn mini_badge(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    ui.label(egui::RichText::new(text).size(11.0).color(color));
-    ui.add_space(8.0);
+    ui.label(egui::RichText::new(text).size(10.0).color(color));
+    ui.add_space(6.0);
 }
 
 fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
@@ -478,7 +459,7 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([440.0, 560.0])
+            .with_inner_size([340.0, 480.0])
             .with_resizable(false)
             .with_always_on_top()
             .with_title("System Optimizer"),
