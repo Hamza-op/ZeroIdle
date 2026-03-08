@@ -553,6 +553,10 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 
 fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
+
+    // Kill any already-running instances of ourselves (daemon or GUI) before proceeding
+    kill_existing_instances();
+
     if args.iter().any(|a| a == "--daemon") {
         crate::killer::run_background_loop();
         return Ok(());
@@ -683,5 +687,61 @@ fn main() -> Result<(), eframe::Error> {
     Ok(())
 }
 
+/// Kill all other running instances of our own executable.
+fn kill_existing_instances() {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+    };
+
+    let self_pid = unsafe { GetCurrentProcessId() };
+
+    // Get our own exe filename (e.g. "idm-system-tool.exe")
+    let self_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+    let self_name = match self_name {
+        Some(n) => n,
+        None => return,
+    };
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        let handle = match snapshot {
+            Ok(h) if !h.is_invalid() => h,
+            _ => return,
+        };
+
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if Process32FirstW(handle, &mut entry).is_ok() {
+            loop {
+                if entry.th32ProcessID != self_pid {
+                    let name_len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                    let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]).to_lowercase();
+
+                    if name == self_name {
+                        if let Ok(proc) = OpenProcess(PROCESS_TERMINATE, false, entry.th32ProcessID) {
+                            let _ = TerminateProcess(proc, 0);
+                            let _ = windows::Win32::Foundation::CloseHandle(proc);
+                            debug_print(&format!("[i] Killed old instance PID {}", entry.th32ProcessID));
+                        }
+                    }
+                }
+
+                if Process32NextW(handle, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+
+        let _ = windows::Win32::Foundation::CloseHandle(handle);
+    }
+}
+
+/// Global channel for cleanup stats (avoids borrow issues in the closure)
 static CLEANUP_STATS: std::sync::LazyLock<Mutex<Option<cleanup::CleanupStats>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
