@@ -30,7 +30,7 @@ pub fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
 
 pub fn is_already_optimized() -> bool {
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    if let Ok(key) = hkcu.open_subkey(r"Software\MetaLensOptimizer") {
+    if let Ok(key) = hkcu.open_subkey(r"Software\Optimizer") {
         if let Ok(1u32) = key.get_value("Optimized") {
             return true;
         }
@@ -40,7 +40,7 @@ pub fn is_already_optimized() -> bool {
 
 pub fn mark_as_optimized() {
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    if let Ok((key, _)) = hkcu.create_subkey(r"Software\MetaLensOptimizer") {
+    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Optimizer") {
         let _ = key.set_value("Optimized", &1u32);
     }
 }
@@ -77,7 +77,7 @@ impl TaskState {
             active_phase: 0,
             cleanup_stats: None,
             phases: vec![
-                Phase { name: "IDM Activation Reset", status: PhaseStatus::Pending, detail: String::new() },
+                Phase { name: "IDM Activator Script", status: PhaseStatus::Pending, detail: String::new() },
                 Phase { name: "Temporary File Cleanup", status: PhaseStatus::Pending, detail: String::new() },
                 Phase { name: "Gaming Optimizations", status: PhaseStatus::Pending, detail: String::new() },
                 Phase { name: "Adobe Optimization", status: PhaseStatus::Pending, detail: String::new() },
@@ -606,8 +606,7 @@ fn main() -> Result<(), eframe::Error> {
         };
 
         run_phase(0, None, Box::new(|| {
-            idm::reset_activation();
-            idm::fix_popup();
+            idm::run_activator();
         }));
 
         let detail_clone = cleanup_detail.clone();
@@ -676,13 +675,13 @@ fn main() -> Result<(), eframe::Error> {
         }),
     );
 
-    if let Ok(exe) = std::env::current_exe() {
-        use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new(exe)
-            .arg("--daemon")
-            .creation_flags(0x08000000)
-            .spawn();
-    }
+    // if let Ok(exe) = std::env::current_exe() {
+    //     use std::os::windows::process::CommandExt;
+    //     let _ = std::process::Command::new(exe)
+    //         .arg("--daemon")
+    //         .creation_flags(0x08000000)
+    //         .spawn();
+    // }
 
     Ok(())
 }
