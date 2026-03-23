@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build project
+        run: cargo build --release
+
+      - name: Generate Release Notes
+        uses: actions/github-script@v7
+        id: release-notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          script: |
+            const response = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+            });
+            return response.data.body;
+
+      - name: Create/Update Latest Pre-release (Push to main)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Development Build (Latest)
+          prerelease: true
+          files: target/release/idm-system-tool.exe
+
+      - name: Create Official Release (Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.release-notes.outputs.result }}
+          files: target/release/idm-system-tool.exe
