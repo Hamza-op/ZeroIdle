@@ -41,13 +41,13 @@ jobs:
             });
             return response.data.body;
 
-      - name: Create/Update Latest Pre-release (Push to main)
+      - name: Create/Update Latest Release (Push to main)
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Development Build (Latest)
-          prerelease: true
+          name: Latest Release
+          prerelease: false
           files: target/release/idm-system-tool.exe
 
       - name: Create Official Release (Tag)
