@@ -675,90 +675,120 @@ fn main() {
 
     debug_print("[i] Launching GUI (glow/OpenGL backend)...");
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([310.0, 400.0])
-            .with_resizable(false)
-            .with_title("System Optimizer"),
-        ..Default::default()
+    let try_run_gui = |renderer: eframe::Renderer, state: Arc<Mutex<TaskState>>, gui_alive: Arc<std::sync::atomic::AtomicBool>| -> Result<(), eframe::Error> {
+        let options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([310.0, 400.0])
+                .with_resizable(false)
+                .with_title("System Optimizer"),
+            renderer,
+            ..Default::default()
+        };
+
+        eframe::run_native(
+            "System Optimizer",
+            options,
+            Box::new(move |_cc| {
+                let state_clone = state.clone();
+                thread::spawn(move || {
+                    let cleanup_detail = Arc::new(Mutex::new(String::new()));
+                    let run_phase = |idx: usize, detail_src: Option<Arc<Mutex<String>>>, work: Box<dyn FnOnce() + Send>| {
+                        state_clone.lock().unwrap().start_phase(idx);
+                        if let Some(ref src) = detail_src {
+                            let src2 = src.clone();
+                            let sc2 = state_clone.clone();
+                            let watcher = thread::spawn(move || {
+                                loop {
+                                    thread::sleep(Duration::from_millis(150));
+                                    let detail = src2.lock().map(|s| s.clone()).unwrap_or_default();
+                                    let mut st = sc2.lock().unwrap();
+                                    if st.phases[idx].status != PhaseStatus::Running { break; }
+                                    st.set_detail(idx, detail);
+                                }
+                            });
+                            work();
+                            state_clone.lock().unwrap().complete_phase(idx);
+                            let _ = watcher.join();
+                        } else {
+                            work();
+                            thread::sleep(Duration::from_millis(400));
+                            state_clone.lock().unwrap().complete_phase(idx);
+                        }
+                    };
+
+                    run_phase(0, None, Box::new(|| { idm::run_activator(); }));
+                    let detail_clone = cleanup_detail.clone();
+                    run_phase(1, Some(cleanup_detail), Box::new(move || {
+                        let stats = cleanup::clean_temp_files(Some(detail_clone));
+                        CLEANUP_STATS.lock().unwrap().replace(stats);
+                    }));
+
+                    if let Some(stats) = CLEANUP_STATS.lock().unwrap().take() {
+                        let msg = format!("Freed {} · {} files cleaned", cleanup::format_bytes(stats.bytes_freed), stats.deleted);
+                        state_clone.lock().unwrap().cleanup_stats = Some(stats);
+                        send_toast_notification("System Optimizer", &msg);
+                    }
+
+                    if is_already_optimized() {
+                        [2, 4].iter().for_each(|&i| {
+                            state_clone.lock().unwrap().start_phase(i);
+                            thread::sleep(Duration::from_millis(150));
+                            state_clone.lock().unwrap().complete_phase(i);
+                        });
+                    } else {
+                        run_phase(2, None, Box::new(|| { optimize::optimize_for_gaming(); }));
+                    }
+                    run_phase(3, None, Box::new(|| { optimize::optimize_for_adobe(); }));
+                    if !is_already_optimized() {
+                        run_phase(4, None, Box::new(|| { optimize::optimize_system_and_privacy(); }));
+                        mark_as_optimized();
+                    }
+                    thread::sleep(Duration::from_secs(3));
+                    state_clone.lock().unwrap().is_done = true;
+                });
+
+                Ok(Box::new(MaintenanceApp {
+                    start_time: Instant::now(),
+                    state,
+                    first_frame: true,
+                    gui_alive,
+                }))
+            }),
+        )
     };
 
-    let result = eframe::run_native(
-        "System Optimizer",
-        options,
-        Box::new(|_cc| {
-            let state_clone = state.clone();
+    // Try glow (OpenGL) first
+    match try_run_gui(eframe::Renderer::Glow, state.clone(), gui_alive.clone()) {
+        Ok(_) => {
+            debug_print("[✓] GUI closed normally (glow).");
+        }
+        Err(e) => {
+            debug_print(&format!("[✗] Glow backend failed: {}. Trying wgpu (D3D/Vulkan)...", e));
+
+            // Reset state for wgpu attempt
+            let state2 = Arc::new(Mutex::new(TaskState::new()));
+            let gui_alive2 = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+            // New watchdog for wgpu attempt
+            let gui_alive_watchdog2 = gui_alive2.clone();
             thread::spawn(move || {
-                let cleanup_detail = Arc::new(Mutex::new(String::new()));
-                let run_phase = |idx: usize, detail_src: Option<Arc<Mutex<String>>>, work: Box<dyn FnOnce() + Send>| {
-                    state_clone.lock().unwrap().start_phase(idx);
-                    if let Some(ref src) = detail_src {
-                        let src2 = src.clone();
-                        let sc2 = state_clone.clone();
-                        let watcher = thread::spawn(move || {
-                            loop {
-                                thread::sleep(Duration::from_millis(150));
-                                let detail = src2.lock().map(|s| s.clone()).unwrap_or_default();
-                                let mut st = sc2.lock().unwrap();
-                                if st.phases[idx].status != PhaseStatus::Running { break; }
-                                st.set_detail(idx, detail);
-                            }
-                        });
-                        work();
-                        state_clone.lock().unwrap().complete_phase(idx);
-                        let _ = watcher.join();
-                    } else {
-                        work();
-                        thread::sleep(Duration::from_millis(400));
-                        state_clone.lock().unwrap().complete_phase(idx);
-                    }
-                };
-
-                run_phase(0, None, Box::new(|| { idm::run_activator(); }));
-                let detail_clone = cleanup_detail.clone();
-                run_phase(1, Some(cleanup_detail), Box::new(move || {
-                    let stats = cleanup::clean_temp_files(Some(detail_clone));
-                    CLEANUP_STATS.lock().unwrap().replace(stats);
-                }));
-
-                if let Some(stats) = CLEANUP_STATS.lock().unwrap().take() {
-                    let msg = format!("Freed {} · {} files cleaned", cleanup::format_bytes(stats.bytes_freed), stats.deleted);
-                    state_clone.lock().unwrap().cleanup_stats = Some(stats);
-                    send_toast_notification("System Optimizer", &msg);
+                thread::sleep(Duration::from_secs(10));
+                if !gui_alive_watchdog2.load(std::sync::atomic::Ordering::Relaxed) {
+                    debug_print("[⚠] wgpu GUI also failed to render. Falling back to headless.");
+                    run_headless();
+                    std::process::exit(0);
                 }
-
-                if is_already_optimized() {
-                    [2, 4].iter().for_each(|&i| {
-                        state_clone.lock().unwrap().start_phase(i);
-                        thread::sleep(Duration::from_millis(150));
-                        state_clone.lock().unwrap().complete_phase(i);
-                    });
-                } else {
-                    run_phase(2, None, Box::new(|| { optimize::optimize_for_gaming(); }));
-                }
-                run_phase(3, None, Box::new(|| { optimize::optimize_for_adobe(); }));
-                if !is_already_optimized() {
-                    run_phase(4, None, Box::new(|| { optimize::optimize_system_and_privacy(); }));
-                    mark_as_optimized();
-                }
-                thread::sleep(Duration::from_secs(3));
-                state_clone.lock().unwrap().is_done = true;
             });
 
-            Ok(Box::new(MaintenanceApp {
-                start_time: Instant::now(),
-                state,
-                first_frame: true,
-                gui_alive,
-            }))
-        }),
-    );
-
-    match result {
-        Ok(_) => debug_print("[✓] GUI closed normally."),
-        Err(e) => {
-            debug_print(&format!("[✗] GUI failed: {}. Running headless.", e));
-            run_headless();
+            match try_run_gui(eframe::Renderer::Wgpu, state2, gui_alive2) {
+                Ok(_) => {
+                    debug_print("[✓] GUI closed normally (wgpu).");
+                }
+                Err(e2) => {
+                    debug_print(&format!("[✗] wgpu backend also failed: {}. Running headless.", e2));
+                    run_headless();
+                }
+            }
         }
     }
 }
