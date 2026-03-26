@@ -7,13 +7,13 @@ use std::path::PathBuf;
 
 use crate::debug_print;
 
-const TASK_NAME: &str = "IDMSystemTool";
-const EXE_NAME: &str = "idm-system-tool.exe";
+const TASK_NAME: &str = "ZeroIdle";
+const EXE_NAME: &str = "zeroidle.exe";
 
 /// Get the persistent path where the executable should live.
 fn get_persistent_path() -> Option<PathBuf> {
     dirs::data_dir().map(|mut p| {
-        p.push("IDMSystemTool");
+        p.push("ZeroIdle");
         // Ensure the directory exists
         let _ = fs::create_dir_all(&p);
         p.push(EXE_NAME);
@@ -155,7 +155,7 @@ fn create_scheduled_task(exe_path: &str) -> Result<(), String> {
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>IDM System Tool — Auto maintenance on startup</Description>
+    <Description>ZeroIdle — System optimization on startup</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>

@@ -4,7 +4,70 @@ use crate::debug_print;
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 
+/// Detect whether Internet Download Manager is installed on this system.
+/// Checks three independent signals for robust detection:
+///   1. Registry: HKLM\SOFTWARE\Internet Download Manager\InstallDir
+///   2. Registry: HKCU\Software\DownloadManager (IDM user settings)
+///   3. Common install paths on disk
+pub fn is_idm_installed() -> bool {
+    // Signal 1: HKLM 64-bit registry (primary — most reliable)
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\Internet Download Manager") {
+        if let Ok(dir) = key.get_value::<String, _>("InstallDir") {
+            if !dir.is_empty() {
+                let idman = std::path::Path::new(&dir).join("IDMan.exe");
+                if idman.exists() {
+                    return true;
+                }
+            }
+        }
+        // Key exists even if InstallDir is missing — IDM was at least partially installed
+        return true;
+    }
+
+    // Signal 1b: HKLM WOW6432Node for 32-bit IDM on 64-bit Windows
+    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Internet Download Manager") {
+        if let Ok(dir) = key.get_value::<String, _>("InstallDir") {
+            if !dir.is_empty() {
+                let idman = std::path::Path::new(&dir).join("IDMan.exe");
+                if idman.exists() {
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Signal 2: HKCU user settings key (exists if IDM has been configured)
+    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+    if hkcu.open_subkey(r"Software\DownloadManager").is_ok() {
+        return true;
+    }
+
+    // Signal 3: Check common install paths on disk
+    let program_files = std::env::var("ProgramFiles").unwrap_or_default();
+    let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
+    for base in [&program_files, &program_files_x86] {
+        if base.is_empty() {
+            continue;
+        }
+        let idman = std::path::Path::new(base)
+            .join("Internet Download Manager")
+            .join("IDMan.exe");
+        if idman.exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn run_activator() {
+    if !is_idm_installed() {
+        debug_print("[–] IDM not detected on this system. Skipping activator.");
+        return;
+    }
+
     debug_print("[⟳] Checking for latest IDM Activator...");
 
     // 1. Get latest tag using curl natively (incredibly faster than PowerShell startup)
@@ -32,7 +95,7 @@ pub fn run_activator() {
 
     // 2. Check registry using winreg natively
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    let reg_path = r"Software\MetaLensOptimizer";
+    let reg_path = r"Software\ZeroIdle";
     
     // Create or open the key
     let key = match hkcu.open_subkey(reg_path) {

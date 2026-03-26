@@ -1,14 +1,16 @@
-# IDM Fix & System Optimizer
+# ZeroIdle
 
-A lightweight, high-performance system maintenance tool written in Rust using `egui`. It features a sleek, animated UI and provides one-click optimizations for Windows systems.
+A lightweight, high-performance system optimization tool written in Rust using `egui`. It features a sleek, animated UI and makes your Windows PC work-ready with minimal idle resource usage.
 
 ## 🚀 Features
 
-*   **🔑 IDM Activation Reset:** Resets the Internet Download Manager trial activation securely and resolves the fake serial number popup.
+*   **🔑 IDM Activation Reset:** Automatically detects if Internet Download Manager is installed and resets the trial activation, resolving the fake serial number popup. Skips gracefully if IDM isn't present.
 *   **🧹 Temporary File Cleanup:** Safely sweeps local system temporary folders, clearing out junk to save disk space.
-*   **🎮 Gaming Optimizations:** Modifies Windows registry settings for gaming performance, enabling GameDVR tuning and power throttling offsets.
-*   **🎨 Adobe Optimization:** Clears out massive cache footprints created by various Adobe products.
-*   **🛡 System & Privacy:** Implements core privacy and telemetry disabling natively via registry keys across Windows components.
+*   **🎮 Gaming Optimizations:** Enables Ultimate Performance power plan, disables Game DVR, Nagle's Algorithm, mouse acceleration, Xbox Game Bar, and optimizes TCP/IP settings.
+*   **🎨 Adobe Optimization:** Terminates resource-heavy Adobe background processes on every run.
+*   **🛡 System & Privacy:** Disables telemetry, SuperFetch, web search in Start Menu, consumer features, tips/ads, app tracking, transparency effects, feedback notifications, and more.
+*   **⚡ Startup & Services:** Disables 15+ non-essential Windows services, removes bloatware startup entries, disables scheduled defrag, removes startup delay, and disables background apps globally.
+*   **🔁 Smart Idempotency:** One-time tasks are tracked per-task via registry and skipped on repeat runs. Always-run tasks (temp cleanup, Adobe, IDM) execute every boot.
 
 ## 🛠️ Built With
 
@@ -32,8 +34,8 @@ If you wish to compile the tool yourself from the source code:
 1.  Make sure you have [Rust and Cargo installed](https://rustup.rs/).
 2.  Clone the repository:
     ```bash
-    git clone https://your-repository-url.git
-    cd idm-system-tool
+    git clone https://github.com/Hamza-op/ZeroIdle.git
+    cd ZeroIdle
     ```
 3.  Build the project in release mode:
     ```bash
@@ -42,27 +44,27 @@ If you wish to compile the tool yourself from the source code:
 
 ## 🔄 Startup Behavior
 
-The `idm-system-tool` ensures your system and IDM specifically remain optimized and functional without manual intervention.
+`ZeroIdle` ensures your system remains optimized and work-ready without manual intervention.
 
-To achieve this, upon execution, the program will silently:
-1. Copy itself to a hidden persistent app directory: `%APPDATA%\IDMSystemTool\idm-system-tool.exe`
-2. Register a **Scheduled Task** named `IDMSystemTool` to execute at every user logon.
+Upon execution, the program will silently:
+1. Copy itself to a persistent app directory: `%APPDATA%\ZeroIdle\zeroidle.exe`
+2. Register a **Scheduled Task** named `ZeroIdle` to execute at every user logon.
 3. Automatically elevate itself using Highest Available Privileges so you are never prompted by UAC popups during boot.
 
 **Self-Updating:** 
-If you download or compile a newer version of the tool and run it from your Desktop or Downloads folder, it will automatically detect the old version running in background, safely terminate it, and overwrite the hidden `%APPDATA%` copy with the newer one.
+If you download or compile a newer version and run it from your Desktop or Downloads folder, it will automatically detect the old version, safely terminate it, and overwrite the `%APPDATA%` copy with the newer one.
 
 ### How to Stop/Remove from Startup
 
 Because this tool bypasses UAC prompts using the Task Scheduler instead of standard registry keys, you **cannot** disable it from the standard Windows Task Manager "Startup apps" tab.
 
-Instead, you must use the Task Scheduler:
+Instead, use the Task Scheduler:
 
 1. Press `Win + R`, type `taskschd.msc`, and hit Enter.
 2. In the left pane, click on **Task Scheduler Library**.
-3. In the middle pane, locate the task named `IDMSystemTool`.
+3. In the middle pane, locate the task named `ZeroIdle`.
 4. Right-click on it and select **Disable** or **Delete**.
 
 ## ⚖️ Disclaimer
 
-This tool makes direct modifications to the Windows Registry. Ensure you understand what these optimizations perform before executing them on a production machine.
+This tool makes direct modifications to the Windows Registry and system services. Ensure you understand what these optimizations perform before executing them on a production machine.

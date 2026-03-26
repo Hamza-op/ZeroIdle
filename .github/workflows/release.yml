@@ -48,11 +48,11 @@ jobs:
           tag_name: latest
           name: Latest Release
           prerelease: false
-          files: target/release/idm-system-tool.exe
+          files: target/release/zeroidle.exe
 
       - name: Create Official Release (Tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.release-notes.outputs.result }}
-          files: target/release/idm-system-tool.exe
+          files: target/release/zeroidle.exe

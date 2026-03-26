@@ -956,16 +956,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "idm-system-tool"
-version = "1.1.0"
-dependencies = [
- "dirs",
- "eframe",
- "windows",
- "winreg",
-]
-
-[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3161,6 +3151,16 @@ dependencies = [
  "quote",
  "syn",
  "synstructure",
+]
+
+[[package]]
+name = "zeroidle"
+version = "2.0.0"
+dependencies = [
+ "dirs",
+ "eframe",
+ "windows",
+ "winreg",
 ]
 
 [[package]]

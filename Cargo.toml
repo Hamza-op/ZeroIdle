@@ -1,6 +1,6 @@
 [package]
-name = "idm-system-tool"
-version = "1.1.0"
+name = "zeroidle"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
