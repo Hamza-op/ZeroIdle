@@ -1,13 +1,15 @@
 use std::thread;
 use std::time::Duration;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, SendMessageW, WM_CLOSE,
-};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
-use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentProcessId, SetProcessWorkingSetSize};
+use windows::Win32::System::Threading::{
+    GetCurrentProcess, GetCurrentProcessId, SetProcessWorkingSetSize,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, SendMessageW, WM_CLOSE,
+};
 
 /// Known system window class names that must NEVER be closed.
 const SYSTEM_CLASSES: &[&str] = &[
@@ -87,12 +89,20 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     let class_len = GetClassNameW(hwnd, &mut class_buf);
     if class_len > 0 {
         let class_name = String::from_utf16_lossy(&class_buf[..class_len as usize]);
-        if SYSTEM_CLASSES.iter().any(|&sc| class_name.eq_ignore_ascii_case(sc)) {
+        if SYSTEM_CLASSES
+            .iter()
+            .any(|&sc| class_name.eq_ignore_ascii_case(sc))
+        {
             return BOOL(1);
         }
     }
 
-    let _ = SendMessageW(hwnd, WM_CLOSE, windows::Win32::Foundation::WPARAM(0), LPARAM(0));
+    let _ = SendMessageW(
+        hwnd,
+        WM_CLOSE,
+        windows::Win32::Foundation::WPARAM(0),
+        LPARAM(0),
+    );
 
     BOOL(1) // Continue enumeration
 }
@@ -108,10 +118,10 @@ fn get_idm_pids() -> Vec<u32> {
 
                 if Process32FirstW(handle, &mut entry).is_ok() {
                     let target = [
-                        'i' as u16, 'd' as u16, 'm' as u16, 'a' as u16, 'n' as u16, 
-                        '.' as u16, 'e' as u16, 'x' as u16, 'e' as u16
+                        'i' as u16, 'd' as u16, 'm' as u16, 'a' as u16, 'n' as u16, '.' as u16,
+                        'e' as u16, 'x' as u16, 'e' as u16,
                     ];
-                    
+
                     loop {
                         // Fast zero-allocation prefix match
                         let mut match_len = 0;
@@ -129,12 +139,12 @@ fn get_idm_pids() -> Vec<u32> {
                                 break;
                             }
                         }
-                        
+
                         // ID Man processes are identified via matching all 9 letters right before the null byte
                         if match_len == 9 && entry.szExeFile[9] == 0 {
                             pids.push(entry.th32ProcessID);
                         }
-                        
+
                         if Process32NextW(handle, &mut entry).is_err() {
                             break;
                         }

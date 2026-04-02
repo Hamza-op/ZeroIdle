@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 winreg = "0.52"
 dirs = "5"
+ureq = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wgpu"] }
 
 [dependencies.windows]

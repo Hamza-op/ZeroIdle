@@ -4,7 +4,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-
 use crate::debug_print;
 
 const TASK_NAME: &str = "ZeroIdle";
@@ -91,7 +90,7 @@ pub fn ensure_startup_registered() {
             "[⟳] Copying to persistent location: {}",
             target_str
         ));
-        
+
         // If updating an existing file, we might need to remove it first if it's locked
         if target_exe.exists() {
             // Attempt to kill ONLY the instance of the persistent exe in AppData before overwriting
@@ -279,4 +278,3 @@ fn verify_copy_integrity(source: &std::path::Path, dest: &std::path::Path) -> bo
         }
     }
 }
-

@@ -201,7 +201,9 @@ fn set_ultimate_performance_power_plan() {
 }
 
 fn flush_dns() {
-    let output = crate::hidden_command("ipconfig").args(&["/flushdns"]).output();
+    let output = crate::hidden_command("ipconfig")
+        .args(&["/flushdns"])
+        .output();
     if let Ok(o) = output {
         if o.status.success() {
             debug_print("    ✓ DNS cache flushed.");
@@ -271,8 +273,7 @@ foreach ($interface in $interfaces) {
 
 fn disable_xbox_game_bar() {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\GameDVR")
-    {
+    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\GameDVR") {
         let _ = key.set_value("AppCaptureEnabled", &0u32);
     }
 
@@ -310,7 +311,9 @@ fn disable_telemetry() {
 }
 
 fn disable_hibernation() {
-    let output = crate::hidden_command("powercfg").args(&["-h", "off"]).output();
+    let output = crate::hidden_command("powercfg")
+        .args(&["-h", "off"])
+        .output();
     if let Ok(o) = output {
         if o.status.success() {
             debug_print("    ✓ Hibernation disabled (freed gigabytes of C:\\ space).");
@@ -322,7 +325,9 @@ fn clear_event_logs() {
     ["Application", "Security", "Setup", "System"]
         .iter()
         .for_each(|log| {
-            let _ = crate::hidden_command("wevtutil").args(&["cl", log]).output();
+            let _ = crate::hidden_command("wevtutil")
+                .args(&["cl", log])
+                .output();
         });
     debug_print("    ✓ Windows event logs cleared.");
 }
@@ -334,8 +339,7 @@ fn disable_start_menu_web_search() {
     }
 
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok((key, _)) =
-        hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\Windows Search")
+    if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\Windows Search")
     {
         let _ = key.set_value("DisableWebSearch", &1u32);
         let _ = key.set_value("ConnectedSearchUseWeb", &0u32);
@@ -345,9 +349,7 @@ fn disable_start_menu_web_search() {
 
 fn disable_consumer_features() {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok((key, _)) =
-        hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\CloudContent")
-    {
+    if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\CloudContent") {
         let _ = key.set_value("DisableWindowsConsumerFeatures", &1u32);
     }
     debug_print("    ✓ Consumer Features disabled (no auto-installing Candy Crush).");
@@ -382,7 +384,9 @@ fn disable_app_launch_tracking() {
 
 fn disable_transparency_effects() {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") {
+    if let Ok((key, _)) =
+        hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+    {
         let _ = key.set_value("EnableTransparency", &0u32);
     }
     debug_print("    ✓ Transparency effects disabled (lower GPU idle overhead).");
@@ -515,9 +519,9 @@ fn disable_scheduled_defrag() {
 fn disable_startup_delay() {
     // Remove the artificial startup delay Windows adds
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok((key, _)) = hkcu.create_subkey(
-        r"Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize",
-    ) {
+    if let Ok((key, _)) =
+        hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize")
+    {
         let _ = key.set_value("StartupDelayInMSec", &0u32);
     }
     debug_print("    ✓ Startup delay removed (faster boot-to-desktop).");
@@ -526,17 +530,15 @@ fn disable_startup_delay() {
 fn disable_background_apps() {
     // Disable background apps globally (Win10)
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok((key, _)) = hkcu.create_subkey(
-        r"Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications",
-    ) {
+    if let Ok((key, _)) = hkcu
+        .create_subkey(r"Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications")
+    {
         let _ = key.set_value("GlobalUserDisabled", &1u32);
     }
 
     // Also via policy (Win11)
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok((key, _)) = hklm.create_subkey(
-        r"SOFTWARE\Policies\Microsoft\Windows\AppPrivacy",
-    ) {
+    if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\Policies\Microsoft\Windows\AppPrivacy") {
         let _ = key.set_value("LetAppsRunInBackground", &2u32); // 2 = force deny
     }
     debug_print("    ✓ Background apps disabled globally.");
