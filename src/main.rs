@@ -613,7 +613,7 @@ impl eframe::App for MaintenanceApp {
                 // ── Footer ──
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new("ZeroIdle v2.0  //  github.com/Hamza-op")
+                        egui::RichText::new("ZeroIdle v3.0  //  github.com/Hamza-op")
                             .size(7.5)
                             .color(TEXT_MUTED),
                     );
@@ -621,11 +621,10 @@ impl eframe::App for MaintenanceApp {
             });
         });
 
-        // Only repaint when there's animation or something changed — use dirty flag
-        if self.dirty || progress < 1.0 {
-            ctx.request_repaint_after(Duration::from_millis(100));
-            self.dirty = false;
-        }
+        // Keep repainting until window closes — progress == 1.0 but is_done may still be false
+        // (task thread sleeps briefly before setting is_done). Without this the UI freezes at 100%.
+        ctx.request_repaint_after(Duration::from_millis(100));
+        self.dirty = false;
     }
 }
 
@@ -994,7 +993,7 @@ fn main() {
                         return;
                     }
                     run_all_phases(Some(state_for_thread.clone()));
-                    thread::sleep(Duration::from_secs(3));
+                    thread::sleep(Duration::from_millis(1500));
                     state_for_thread.lock().unwrap_or_else(|e| e.into_inner()).is_done = true;
                 });
 
