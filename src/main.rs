@@ -66,7 +66,7 @@ fn format_timestamp() -> String {
     let mut days = remaining;
     let mut year = 1970u64;
     loop {
-        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
         let days_in_year = if leap { 366 } else { 365 };
         if days < days_in_year {
             break;
@@ -74,7 +74,7 @@ fn format_timestamp() -> String {
         days -= days_in_year;
         year += 1;
     }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
     let months = [31u64, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut month = 1u64;
     for &m in &months {
@@ -276,7 +276,6 @@ struct MaintenanceApp {
     state: Arc<Mutex<TaskState>>,
     first_frame: bool,
     gui_alive: Arc<std::sync::atomic::AtomicBool>,
-    dirty: bool,
 }
 
 impl eframe::App for MaintenanceApp {
@@ -290,7 +289,7 @@ impl eframe::App for MaintenanceApp {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let is_done = state.is_done;
         let progress = state.progress();
-        let phases: Vec<Phase> = state.phases.iter().cloned().collect();
+        let phases: Vec<Phase> = state.phases.to_vec();
         let cleanup_stats = state.cleanup_stats.clone();
         drop(state);
 
@@ -624,7 +623,6 @@ impl eframe::App for MaintenanceApp {
         // Keep repainting until window closes — progress == 1.0 but is_done may still be false
         // (task thread sleeps briefly before setting is_done). Without this the UI freezes at 100%.
         ctx.request_repaint_after(Duration::from_millis(100));
-        self.dirty = false;
     }
 }
 
@@ -718,18 +716,6 @@ fn send_error_toast(phase: &str, reason: &str) {
     );
 }
 
-// ─────────────────────────────────────────────────────────────
-// Network Availability Gate
-// ─────────────────────────────────────────────────────────────
-
-/// Returns true if internet is reachable (fast check, 2s timeout).
-fn is_online() -> bool {
-    hidden_command("ping")
-        .args(&["1.1.1.1", "-n", "1", "-w", "2000"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
 
 // ─────────────────────────────────────────────────────────────
 // Task Runner — shared between GUI thread and headless
@@ -791,8 +777,7 @@ fn run_all_phases(state: Option<Arc<Mutex<TaskState>>>) {
 
     // Phase 0: IDM Activator (always-run, gated by network + IDM presence)
     if idm::is_idm_installed() {
-        let online = is_online();
-        if online {
+        if idm::is_network_available() {
             run_phase(0, None, Box::new(|| { idm::run_activator(); }));
         } else {
             debug_print("[⚠] IDM activator skipped — no network connection.");
@@ -898,8 +883,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     // Admin check before kill_existing (can't kill elevated instances without admin)
-    if !args.iter().any(|a| a == "--daemon" || a == "--headless") {
-        if !admin::is_admin() {
+    if !args.iter().any(|a| a == "--daemon" || a == "--headless")
+        && !admin::is_admin() {
             debug_print("[i] Not admin, requesting elevation...");
             if admin::elevate_self() {
                 std::process::exit(0);
@@ -907,7 +892,6 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    }
 
     kill_existing_instances();
 
@@ -1002,7 +986,6 @@ fn main() {
                     state: state_clone,
                     first_frame: true,
                     gui_alive,
-                    dirty: false,
                 }))
             }),
         )
@@ -1076,8 +1059,6 @@ fn main() {
         }
     }
 }
-
-
 
 /// Kill all other running instances of our own executable.
 fn kill_existing_instances() {

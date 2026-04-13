@@ -17,7 +17,7 @@ pub struct CleanupStats {
 /// Get available disk space on C: in bytes via PowerShell (no extra deps).
 fn available_bytes_on_c() -> Option<u64> {
     let output = crate::hidden_command("powershell")
-        .args(&[
+        .args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
@@ -216,7 +216,7 @@ fn clean_directory(dir: &PathBuf) -> (u64, u64, u64) {
             let path = entry.path();
 
             // Never delete ourselves
-            if current_exe.as_ref().map_or(false, |exe| path == *exe) {
+            if current_exe.as_ref().is_some_and(|exe| path == *exe) {
                 return (deleted, failed, bytes);
             }
 

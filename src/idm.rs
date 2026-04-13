@@ -370,41 +370,112 @@ fn find_script_bat(base_dir: &Path) -> Option<PathBuf> {
     found
 }
 
-/// Run `script.bat` with pre-filled stdin answers, hidden window.
+/// Check if the current process is running with administrator privileges.
+fn is_process_elevated() -> bool {
+    // Attempt to open a handle to the SYSTEM hive — only succeeds as admin.
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    hklm.open_subkey_with_flags(
+        r"SYSTEM\CurrentControlSet",
+        winreg::enums::KEY_WRITE,
+    ).is_ok()
+}
+
+/// Run `script.bat` elevated.
+///
+/// # Why stdin piping does NOT work
+/// The bat checks for admin rights and, if not elevated, spawns a **new** elevated
+/// process via VBScript (`UAC.ShellExecute ... "runas"`) then immediately calls
+/// `exit /B`.  Any stdin we pipe goes to the non-elevated wrapper that exits
+/// instantly; the real elevated child gets nothing → interactive `set /p` prompts
+/// stall forever (or the window flashes and closes).
+///
+/// # Fix
+/// We must already hold admin rights before calling this.  We then pipe answers
+/// directly and redirect all output to a temp log file so failures are visible.
 fn execute_script_bat(bat_path: &Path) -> Result<(), String> {
     let temp = std::env::temp_dir();
-    let input_path = temp.join("idm_input.txt");
 
-    debug_print(&format!(
-        "  [idm] Writing stdin file: '{}'",
-        input_path.display()
-    ));
+    if !is_process_elevated() {
+        return Err(
+            "ZeroIdle is not running as Administrator. \
+             script.bat requires elevation to patch IDMan.exe and write registry keys. \
+             Please run ZeroIdle as Administrator."
+            .into(),
+        );
+    }
+
+    // Build a thin wrapper that feeds answers and captures all output to a log file.
+    // We redirect inside the wrapper so we can read back the full transcript.
+    let log_path     = temp.join("idm_activation.log");
+    let wrapper_path = temp.join("idm_wrapper.bat");
+
+    // The bat uses `set /p` for interactive input; we satisfy it by piping
+    // "y<CR>1<CR>" into cmd's stdin while running the script with /c.
+    let input_path = temp.join("idm_input.txt");
     std::fs::write(&input_path, "y\r\n1\r\n\r\n\r\n")
         .map_err(|e| format!("Cannot write input file: {e}"))?;
 
+    let wrapper = format!(
+        "@echo off\r\n\
+         cmd.exe /c \"{bat}\" < \"{inp}\" >> \"{log}\" 2>&1\r\n\
+         echo EXITCODE=%errorlevel% >> \"{log}\"\r\n",
+        bat = bat_path.display(),
+        inp = input_path.display(),
+        log = log_path.display(),
+    );
+    std::fs::write(&wrapper_path, wrapper)
+        .map_err(|e| format!("Cannot write wrapper bat: {e}"))?;
+
+    if log_path.exists() { let _ = std::fs::remove_file(&log_path); }
+
     debug_print(&format!(
-        "  [idm] Launching: cmd.exe /c \"{}\"",
-        bat_path.display()
+        "  [idm] Launching wrapper: '{}'",
+        wrapper_path.display()
     ));
     let t0 = Instant::now();
 
     let status = Command::new("cmd.exe")
-        .args(["/c", &bat_path.to_string_lossy()])
-        .stdin(std::fs::File::open(&input_path).map_err(|e| format!("stdin open: {e}"))?)
+        .args(["/c", &wrapper_path.to_string_lossy()])
+        .stdin(std::process::Stdio::null())
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .status()
-        .map_err(|e| format!("Failed to launch cmd.exe: {e}"))?;
+        .map_err(|e| format!("Failed to launch wrapper: {e}"))?;
 
     let elapsed = t0.elapsed();
-    let _ = std::fs::remove_file(&input_path);
-
     let exit_code = status.code().unwrap_or(-1);
     debug_print(&format!(
-        "  [idm] script.bat finished: exit_code={exit_code} | elapsed: {elapsed:.0?}"
+        "  [idm] Wrapper finished: exit_code={exit_code} | elapsed: {elapsed:.0?}"
     ));
 
+    // Read back and log the script's output for diagnosis
+    if let Ok(log_content) = std::fs::read_to_string(&log_path) {
+        if log_content.is_empty() {
+            debug_print("  [idm] script.bat produced no output");
+        } else {
+            for line in log_content.lines() {
+                debug_print(&format!("  [bat] {line}"));
+            }
+            // Detect common failure strings in output
+            let lc = log_content.to_lowercase();
+            if lc.contains("unsupported idm version") {
+                debug_print("  [idm] ⚠ Unsupported IDM version detected in bat output");
+            }
+            if lc.contains("idman.exe not found") || lc.contains("not found in") {
+                debug_print("  [idm] ⚠ IDMan.exe path resolution failed in bat");
+            }
+            if lc.contains("failed to copy") {
+                debug_print("  [idm] ⚠ File copy failed — check permissions on IDMan.exe");
+            }
+        }
+    }
+
+    // Cleanup temp files
+    let _ = std::fs::remove_file(&input_path);
+    let _ = std::fs::remove_file(&wrapper_path);
+    let _ = std::fs::remove_file(&log_path);
+
     if !status.success() {
-        return Err(format!("script.bat exited with code {exit_code}"));
+        return Err(format!("script.bat wrapper exited with code {exit_code}"));
     }
     Ok(())
 }

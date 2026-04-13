@@ -2,6 +2,7 @@
 name = "zeroidle"
 version = "2.0.0"
 edition = "2021"
+default-run = "zeroidle"
 
 [dependencies]
 winreg = "0.52"

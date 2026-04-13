@@ -34,7 +34,7 @@ fn run_silent(program: &str, args: &[&str]) -> bool {
 
 fn run_silent_ps(script: &str) -> bool {
     crate::hidden_command("powershell")
-        .args(&["-NoProfile", "-NonInteractive", "-Command", script])
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
@@ -48,7 +48,7 @@ fn run_silent_ps(script: &str) -> bool {
 /// Queries via PowerShell Get-PhysicalDisk. Falls back to true (safe — don't harm SSDs).
 pub fn is_system_ssd() -> bool {
     let result = crate::hidden_command("powershell")
-        .args(&[
+        .args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
@@ -79,7 +79,7 @@ fn windows_build() -> u32 {
 /// Returns total physical RAM in GB.
 fn total_ram_gb() -> u64 {
     let result = crate::hidden_command("powershell")
-        .args(&[
+        .args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
@@ -733,12 +733,11 @@ fn disable_bloatware_startup_entries() {
         };
         if let Ok(key) = RegKey::predef(*root).open_subkey_with_flags(target_path, KEY_READ | KEY_WRITE) {
             for entry in startup_entries {
-                if key.get_raw_value(*entry).is_ok() {
-                    if key.delete_value(*entry).is_ok() {
+                if key.get_raw_value(*entry).is_ok()
+                    && key.delete_value(*entry).is_ok() {
                         debug_print(&format!("    ✓ Removed startup: {}", entry));
                         removed += 1;
                     }
-                }
             }
         }
     }

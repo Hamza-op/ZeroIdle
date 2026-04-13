@@ -127,19 +127,10 @@ fn get_idm_pids() -> Vec<u32> {
                     loop {
                         // Fast zero-allocation prefix match
                         let mut match_len = 0;
-                        for i in 0..9 {
-                            let mut c = entry.szExeFile[i];
-                            if c == 0 {
-                                break;
-                            }
-                            if c >= 'A' as u16 && c <= 'Z' as u16 {
-                                c += 32; // to lowercase
-                            }
-                            if c == target[i] {
-                                match_len += 1;
-                            } else {
-                                break;
-                            }
+                        for (&expected, &raw) in target.iter().zip(entry.szExeFile.iter()) {
+                            if raw == 0 { break; }
+                            let c = if raw >= b'A' as u16 && raw <= b'Z' as u16 { raw + 32 } else { raw };
+                            if c == expected { match_len += 1; } else { break; }
                         }
 
                         // ID Man processes are identified via matching all 9 letters right before the null byte
