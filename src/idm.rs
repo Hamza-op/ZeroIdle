@@ -1,8 +1,8 @@
 //! IDM Activation — fully native Rust implementation.
 //!
-//! Uses `ureq` for HTTP and the `zip` crate for extraction, eliminating
-//! curl/PowerShell subprocess overhead entirely.  The only subprocess
-//! spawned is `cmd.exe /c script.bat` for the final activation step.
+//! Uses `ureq` for HTTP and the `zip` crate for extraction.
+//! Activation is performed natively: `taskkill`, `regedit /s`, and a
+//! direct file copy — no bat script menu dispatch involved.
 
 use crate::debug_print;
 use std::io::Write;
@@ -319,58 +319,46 @@ fn extract_zip(zip_path: &Path, dest_dir: &Path) -> Result<usize, String> {
     Ok(entry_count)
 }
 
-// ── Script execution ────────────────────────────────────────────────
+/// Resolve the IDM installation directory — mirrors the registry lookup order
+/// used by script.bat (WOW6432Node first, then 64-bit key, then HKCU fallback,
+/// then hard-coded default).
+fn resolve_idm_install_dir() -> PathBuf {
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
 
-/// Locate `script.bat` inside `base_dir` — check the expected nested path
-/// first, then fall back to a recursive search.
-fn find_script_bat(base_dir: &Path) -> Option<PathBuf> {
-    // Fast path: expected location
-    let expected = base_dir.join("IDM-Activator").join("script.bat");
-    debug_print(&format!(
-        "  [idm] Looking for script.bat at expected path: '{}'",
-        expected.display()
-    ));
-    if expected.is_file() {
-        debug_print("  [idm] script.bat found at expected path");
-        return Some(expected);
-    }
-
-    debug_print("  [idm] Expected path miss — scanning recursively...");
-
-    // Recursive fallback
-    fn walk(dir: &Path) -> Option<PathBuf> {
-        for entry in std::fs::read_dir(dir).ok()? {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.is_file()
-                && path
-                    .file_name()
-                    .is_some_and(|n| n.eq_ignore_ascii_case("script.bat"))
-            {
-                return Some(path);
-            }
-            if path.is_dir() {
-                if let Some(found) = walk(&path) {
-                    return Some(found);
+    // 1. WOW6432Node (32-bit IDM on 64-bit Windows — most common)
+    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Internet Download Manager") {
+        for value_name in &["InstallPath", "InstallDir"] {
+            if let Ok(dir) = key.get_value::<String, _>(value_name) {
+                if !dir.is_empty() {
+                    return PathBuf::from(dir);
                 }
             }
         }
-        None
     }
-
-    let found = walk(base_dir);
-    if let Some(ref p) = found {
-        debug_print(&format!(
-            "  [idm] script.bat found via recursive search: '{}'",
-            p.display()
-        ));
-    } else {
-        debug_print("  [idm] script.bat NOT found anywhere in extract dir");
+    // 2. 64-bit HKLM key
+    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\Internet Download Manager") {
+        for value_name in &["InstallPath", "InstallDir"] {
+            if let Ok(dir) = key.get_value::<String, _>(value_name) {
+                if !dir.is_empty() {
+                    return PathBuf::from(dir);
+                }
+            }
+        }
     }
-    found
+    // 3. HKCU user key
+    if let Ok(key) = hkcu.open_subkey(r"Software\DownloadManager") {
+        if let Ok(dir) = key.get_value::<String, _>("InstallPath") {
+            if !dir.is_empty() {
+                return PathBuf::from(dir);
+            }
+        }
+    }
+    // 4. Hard-coded default (same as script.bat)
+    PathBuf::from(r"C:\Program Files (x86)\Internet Download Manager")
 }
 
-/// Check if the current process is running with administrator privileges.
+
 fn is_process_elevated() -> bool {
     // Attempt to open a handle to the SYSTEM hive — only succeeds as admin.
     let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
@@ -380,103 +368,104 @@ fn is_process_elevated() -> bool {
     ).is_ok()
 }
 
-/// Run `script.bat` elevated.
+/// Perform IDM activation natively — no bat script dispatch needed.
 ///
-/// # Why stdin piping does NOT work
-/// The bat checks for admin rights and, if not elevated, spawns a **new** elevated
-/// process via VBScript (`UAC.ShellExecute ... "runas"`) then immediately calls
-/// `exit /B`.  Any stdin we pipe goes to the non-elevated wrapper that exits
-/// instantly; the real elevated child gets nothing → interactive `set /p` prompts
-/// stall forever (or the window flashes and closes).
+/// # Why we don't use script.bat's menu
+/// The bat uses `setlocal enabledelayedexpansion` but its `if/else if/else`
+/// dispatch block uses bare `%choice%` (percent-expansion), which cmd resolves
+/// at **parse time** — before `set /p` ever runs.  When stdin is piped, `%choice%`
+/// is always empty at parse time, so the block always falls through to the
+/// `else` "Invalid choice" branch, regardless of what we send.
 ///
-/// # Fix
-/// We must already hold admin rights before calling this.  We then pipe answers
-/// directly and redirect all output to a temp log file so failures are visible.
-fn execute_script_bat(bat_path: &Path) -> Result<(), String> {
-    let temp = std::env::temp_dir();
-
+/// # What we do instead
+/// We replicate exactly what the bat's option-1 handler does, natively in Rust:
+///   1. Kill `IDMan.exe` gracefully (taskkill)
+///   2. Apply `Registry.bin` via `regedit /s`
+///   3. Copy `data.bin` over `IDMan.exe` in the install directory
+fn activate_idm_native(script_dir: &Path, idm_install_dir: &Path) -> Result<(), String> {
     if !is_process_elevated() {
         return Err(
             "ZeroIdle is not running as Administrator. \
-             script.bat requires elevation to patch IDMan.exe and write registry keys. \
-             Please run ZeroIdle as Administrator."
+             IDM activation requires elevation to patch IDMan.exe and write registry keys."
             .into(),
         );
     }
 
-    // Build a thin wrapper that feeds answers and captures all output to a log file.
-    // We redirect inside the wrapper so we can read back the full transcript.
-    let log_path     = temp.join("idm_activation.log");
-    let wrapper_path = temp.join("idm_wrapper.bat");
+    let src_dir        = script_dir.join("src");
+    let data_bin       = src_dir.join("data.bin");
+    let registry_bin   = src_dir.join("Registry.bin");
+    let idman_exe      = idm_install_dir.join("IDMan.exe");
+    let idman_exe_dest = idm_install_dir.join("IDMan.exe");
 
-    // The bat uses `set /p` for interactive input; we satisfy it by piping
-    // "y<CR>1<CR>" into cmd's stdin while running the script with /c.
-    let input_path = temp.join("idm_input.txt");
-    std::fs::write(&input_path, "y\r\n1\r\n\r\n\r\n")
-        .map_err(|e| format!("Cannot write input file: {e}"))?;
+    // ── Verify sources ───────────────────────────────────────────────
+    for (path, label) in [(&data_bin, "data.bin"), (&registry_bin, "Registry.bin")] {
+        if !path.exists() {
+            return Err(format!(
+                "Required activation file '{}' not found at '{}'",
+                label, path.display()
+            ));
+        }
+        debug_print(&format!("  [idm] Verified source: '{}'", path.display()));
+    }
+    if !idman_exe.exists() {
+        return Err(format!(
+            "IDMan.exe not found at '{}'. Check the install path.",
+            idman_exe.display()
+        ));
+    }
 
-    let wrapper = format!(
-        "@echo off\r\n\
-         cmd.exe /c \"{bat}\" < \"{inp}\" >> \"{log}\" 2>&1\r\n\
-         echo EXITCODE=%errorlevel% >> \"{log}\"\r\n",
-        bat = bat_path.display(),
-        inp = input_path.display(),
-        log = log_path.display(),
-    );
-    std::fs::write(&wrapper_path, wrapper)
-        .map_err(|e| format!("Cannot write wrapper bat: {e}"))?;
-
-    if log_path.exists() { let _ = std::fs::remove_file(&log_path); }
-
-    debug_print(&format!(
-        "  [idm] Launching wrapper: '{}'",
-        wrapper_path.display()
-    ));
-    let t0 = Instant::now();
-
-    let status = Command::new("cmd.exe")
-        .args(["/c", &wrapper_path.to_string_lossy()])
-        .stdin(std::process::Stdio::null())
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .status()
-        .map_err(|e| format!("Failed to launch wrapper: {e}"))?;
-
-    let elapsed = t0.elapsed();
-    let exit_code = status.code().unwrap_or(-1);
-    debug_print(&format!(
-        "  [idm] Wrapper finished: exit_code={exit_code} | elapsed: {elapsed:.0?}"
-    ));
-
-    // Read back and log the script's output for diagnosis
-    if let Ok(log_content) = std::fs::read_to_string(&log_path) {
-        if log_content.is_empty() {
-            debug_print("  [idm] script.bat produced no output");
-        } else {
-            for line in log_content.lines() {
-                debug_print(&format!("  [bat] {line}"));
-            }
-            // Detect common failure strings in output
-            let lc = log_content.to_lowercase();
-            if lc.contains("unsupported idm version") {
-                debug_print("  [idm] ⚠ Unsupported IDM version detected in bat output");
-            }
-            if lc.contains("idman.exe not found") || lc.contains("not found in") {
-                debug_print("  [idm] ⚠ IDMan.exe path resolution failed in bat");
-            }
-            if lc.contains("failed to copy") {
-                debug_print("  [idm] ⚠ File copy failed — check permissions on IDMan.exe");
+    // ── Step A: Kill IDMan.exe if running ────────────────────────────
+    debug_print("  [idm] Terminating IDMan.exe if running...");
+    let kill = Command::new("taskkill")
+        .args(["/F", "/IM", "IDMan.exe"])
+        .creation_flags(0x08000000)
+        .output();
+    match kill {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if out.status.success() {
+                debug_print("  [idm] IDMan.exe terminated.");
+            } else {
+                // exit 128 = process not found — perfectly normal
+                debug_print(&format!(
+                    "  [idm] IDMan.exe not running (taskkill exit {}): {}{}",
+                    out.status.code().unwrap_or(-1),
+                    stdout.trim(),
+                    stderr.trim()
+                ));
             }
         }
+        Err(e) => debug_print(&format!("  [idm] taskkill failed to launch: {e}")),
     }
 
-    // Cleanup temp files
-    let _ = std::fs::remove_file(&input_path);
-    let _ = std::fs::remove_file(&wrapper_path);
-    let _ = std::fs::remove_file(&log_path);
-
-    if !status.success() {
-        return Err(format!("script.bat wrapper exited with code {exit_code}"));
+    // ── Step B: Apply registry patch ─────────────────────────────────
+    debug_print(&format!(
+        "  [idm] Importing registry: '{}'",
+        registry_bin.display()
+    ));
+    let reg_status = Command::new("regedit.exe")
+        .args(["/s", &registry_bin.to_string_lossy()])
+        .creation_flags(0x08000000)
+        .status()
+        .map_err(|e| format!("Failed to launch regedit: {e}"))?;
+    if !reg_status.success() {
+        return Err(format!(
+            "regedit /s exited with code {}",
+            reg_status.code().unwrap_or(-1)
+        ));
     }
+    debug_print("  [idm] Registry patch applied.");
+
+    // ── Step C: Overwrite IDMan.exe with patched binary ───────────────
+    debug_print(&format!(
+        "  [idm] Copying data.bin → '{}'",
+        idman_exe_dest.display()
+    ));
+    std::fs::copy(&data_bin, &idman_exe_dest)
+        .map_err(|e| format!("Failed to copy data.bin to IDMan.exe: {e}"))?;
+    debug_print("  [idm] IDMan.exe patched successfully.");
+
     Ok(())
 }
 
@@ -654,24 +643,24 @@ pub fn run_activator() {
         }
     }
 
-    // ── Step 6: Locate and execute script.bat ───────────────────────
-    debug_print("  [idm] ── Step 6: Locating and running script.bat ──");
-    let bat_path = match find_script_bat(&extract_dir) {
-        Some(p) => p,
-        None => {
-            debug_print("  [✗] script.bat not found in the downloaded archive.");
-            let _ = std::fs::remove_file(&zip_path);
-            let _ = std::fs::remove_dir_all(&extract_dir);
-            return;
-        }
-    };
+    // ── Step 6: Run native activation ───────────────────────────────
+    debug_print("  [idm] ── Step 6: Running native activation ──");
 
+    // Resolve the IDM install directory from registry (same logic as the bat).
+    let idm_install_dir = resolve_idm_install_dir();
     debug_print(&format!(
-        "  [⟳] Running activation script: '{}'...",
-        bat_path.display()
+        "  [idm] IDM install dir: '{}'",
+        idm_install_dir.display()
     ));
 
-    match execute_script_bat(&bat_path) {
+    // script_dir is the IDM-Activator subfolder; its src/ child holds data.bin etc.
+    let script_dir = extract_dir.join("IDM-Activator");
+    debug_print(&format!(
+        "  [⟳] Activating IDM from extracted archive at '{}'...",
+        script_dir.display()
+    ));
+
+    match activate_idm_native(&script_dir, &idm_install_dir) {
         Ok(()) => {
             // Persist version on success
             debug_print(&format!(
@@ -683,7 +672,7 @@ pub fn run_activator() {
                     "  [idm] ⚠ Registry write FAILED: {e} — next run will re-download"
                 )),
             }
-            debug_print("  [✓] IDM Activator script executed successfully.");
+            debug_print("  [✓] IDM activated successfully.");
         }
         Err(e) => {
             debug_print(&format!("  [✗] Activation failed: {e}"));
