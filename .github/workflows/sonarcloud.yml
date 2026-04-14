@@ -10,7 +10,7 @@ on:
 jobs:
   sonarcloud:
     name: SonarCloud
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,12 +18,14 @@ jobs:
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run tests and generate coverage
-        run: cargo tarpaulin --out Xml --output-dir .
+        run: cargo llvm-cov --cobertura --output-path cobertura.xml
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
